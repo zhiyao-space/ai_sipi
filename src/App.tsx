@@ -11,6 +11,7 @@ import {
   type StyleItem,
 } from "./types";
 import { blobUrlToDataUrl, dbAll, dbDel, dbPut, fileToDataUrl, hashToPage, uid } from "./storage";
+import { detectModels as fetchModels, generateVideo, inspireNext, pollVideoStatus } from "./api";
 import StudioPage from "./pages/StudioPage";
 import CastPage from "./pages/CastPage";
 import StylesPage from "./pages/StylesPage";
@@ -141,13 +142,7 @@ export default function App() {
     setBusy("detect");
     setStatus("正在识别模型…");
     try {
-      const res = await fetch("/api/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: next.baseUrl, apiKey: next.apiKey }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "识别失败");
+      const data = await fetchModels(next.baseUrl, next.apiKey);
       const videoModels = data.videoModels?.length ? data.videoModels : data.models || [];
       const chatModels = data.chatModels?.length ? data.chatModels : data.models || [];
       setApi((prev) => ({
@@ -214,13 +209,8 @@ export default function App() {
   async function pollVideo(id: string) {
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
-      const res = await fetch("/api/video-status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: api.baseUrl, apiKey: api.apiKey, id }),
-      });
-      const data = await res.json();
-      if (data.videoUrl) return data.videoUrl as string;
+      const data = await pollVideoStatus(api.baseUrl, api.apiKey, id);
+      if (data.videoUrl) return data.videoUrl;
       const st = String(data.status || "");
       setStatus(`生成中 · ${st || "queued"} · ${i + 1}/40`);
       if (["failed", "error", "cancelled"].includes(st.toLowerCase())) throw new Error("任务失败");
@@ -243,22 +233,16 @@ export default function App() {
     setStatus("提交生成任务…");
     try {
       const firstImage = cast.find((p) => p.image)?.image || "";
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          baseUrl: api.baseUrl,
-          apiKey: api.apiKey,
-          model: api.videoModel,
-          prompt: composedPrompt,
-          seconds,
-          size,
-          image: firstImage,
-        }),
+      const data = await generateVideo({
+        baseUrl: api.baseUrl,
+        apiKey: api.apiKey,
+        model: api.videoModel,
+        prompt: composedPrompt,
+        seconds,
+        size,
+        image: firstImage,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "生成失败");
-      let url = data.videoUrl as string;
+      let url = data.videoUrl;
       if (!url && data.id) url = await pollVideo(data.id);
       if (!url) throw new Error("接口已响应，但未返回视频地址");
       setVideoUrl(url);
@@ -301,21 +285,16 @@ export default function App() {
     setBusy("idea");
     setStatus("正在生成后续分镜…");
     try {
-      const res = await fetch("/api/inspire", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          baseUrl: api.baseUrl,
-          apiKey: api.apiKey,
-          model: api.chatModel,
-          prompt: composedPrompt,
-          history: album
-            .slice(0, 3)
-            .map((c) => c.prompt)
-            .join(" / "),
-        }),
+      const data = await inspireNext({
+        baseUrl: api.baseUrl,
+        apiKey: api.apiKey,
+        model: api.chatModel,
+        prompt: composedPrompt,
+        history: album
+          .slice(0, 3)
+          .map((c) => c.prompt)
+          .join(" / "),
       });
-      const data = await res.json();
       const list = (data.ideas || []).filter(Boolean);
       setIdeas(list);
       setStatus(data.note || "已给出后续灵感");
