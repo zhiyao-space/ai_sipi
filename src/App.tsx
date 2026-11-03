@@ -311,7 +311,7 @@ export default function App() {
         <div className="brand">
           <div className="brand-kicker">Monochrome Atelier</div>
           <div className="brand-title">
-            <img className="brand-mark" src="/icon.svg" alt="" />
+            <img className="brand-mark" src={`${import.meta.env.BASE_URL}icon.png`} alt="NOIR" />
             <h1>NOIR</h1>
           </div>
           <p>{current.kicker} · {current.label}</p>
